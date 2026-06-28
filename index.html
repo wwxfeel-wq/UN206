@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>时墨之境</title>
+  <link rel="stylesheet" href="css/style.css?v=10">
+</head>
+<body>
+
+  <!-- 加载页 -->
+  <div class="loader" id="loader">
+    <div class="loader-text">载入中</div>
+  </div>
+
+  <!-- 一级页：半色调点阵动画 -->
+  <div class="landing-page">
+    <canvas id="canvas"></canvas>
+    <div class="vignette"></div>
+    <div class="gradient-top"></div>
+
+    <div class="landing-ui">
+      <div class="landing-header">
+        <div class="tag">TRAE AI 创造力大赛</div>
+        <div class="title">时 墨 之 境</div>
+        <div class="subtitle">把等待还给表达，把思念还给时间</div>
+      </div>
+
+      <div class="landing-footer">
+        <div class="enter-hint" id="enterHint">
+          <span class="hint-dot"></span>
+          <span class="hint-text">轻触进入</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 过渡遮罩 -->
+  <div class="transition-overlay" id="transitionOverlay">
+    <div class="transition-text">展信佳</div>
+  </div>
+
+  <script src="js/landing.js?v=13"></script>
+</body>
+</html>

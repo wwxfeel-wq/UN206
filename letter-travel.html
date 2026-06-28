@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>时墨之境 — 信件旅行</title>
+<style>
+  :root{
+    --bg:#05050a;
+    --cyan:#22D3EE;
+    --indigo:#818CF8;
+    --purple:#A78BFA;
+    --green:#34C759;
+    --orange:#FF9500;
+    --ink:rgba(255,255,255,.92);
+    --ink-mute:rgba(255,255,255,.55);
+    --ink-faint:rgba(255,255,255,.32);
+    --font:'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:var(--font);-webkit-font-smoothing:antialiased;color:var(--ink)}
+  a{color:inherit;text-decoration:none}
+
+  .travel-page{position:fixed;inset:0;overflow:hidden}
+
+  /* 主画布：星空 + 曲线 + 信封 */
+  #bgCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1}
+
+  /* 暗角与顶部渐隐 */
+  .vignette{position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:radial-gradient(ellipse at center,transparent 45%,rgba(5,5,10,.85) 100%)}
+  .grad-top{position:absolute;top:0;left:0;right:0;height:160px;z-index:3;pointer-events:none;
+    background:linear-gradient(to bottom,rgba(5,5,10,.7),transparent)}
+
+  /* ===== 顶部：时墨像素头像 + 语录 ===== */
+  .top-bar{position:absolute;top:0;left:0;right:0;z-index:10;
+    display:flex;align-items:center;gap:.9rem;padding:1.4rem 1.6rem}
+  .avatar-wrap{position:relative;flex-shrink:0;width:52px;height:52px;border-radius:50%;
+    background:#0D0D0F;overflow:hidden;
+    box-shadow:0 0 0 1px rgba(34,211,238,.25),0 0 18px rgba(34,211,238,.18),0 2px 10px rgba(0,0,0,.5)}
+  .avatar-wrap::after{content:'';position:absolute;inset:-6px;border-radius:50%;
+    border:1px solid rgba(129,140,248,.18);pointer-events:none;
+    animation:ringPulse 3.6s ease-in-out infinite}
+  #avatarCanvas{width:52px;height:52px;display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+  @keyframes ringPulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.12);opacity:.15}}
+  .companion-line{font-size:.86rem;line-height:1.6;letter-spacing:.06em;color:var(--ink-mute);font-weight:300}
+  .companion-line .name{color:var(--cyan);font-weight:500;margin-right:.5rem}
+  .companion-line .quote{color:var(--ink)}
+  .typing-dots{display:inline-flex;gap:3px;margin-left:.5rem;vertical-align:middle}
+  .typing-dots span{width:4px;height:4px;border-radius:50%;background:var(--cyan);opacity:.4;animation:td 1.4s ease-in-out infinite}
+  .typing-dots span:nth-child(2){animation-delay:.2s}
+  .typing-dots span:nth-child(3){animation-delay:.4s}
+  @keyframes td{0%,60%,100%{opacity:.3;transform:scale(.8)}30%{opacity:1;transform:scale(1)}}
+
+  /* ===== 右上角：收信人 ===== */
+  .dest-tag{position:absolute;top:1.5rem;right:1.6rem;z-index:10;text-align:right;
+    font-size:.66rem;letter-spacing:.22em;color:var(--ink-faint);text-transform:uppercase}
+  .dest-tag .d-name{display:block;font-size:.8rem;letter-spacing:.08em;color:var(--purple);margin-top:.25rem;text-transform:none}
+
+  /* ===== 追踪信息面板（右侧，可展开/收起） ===== */
+  .tracking-panel{
+    position:absolute;right:1.6rem;top:5.5rem;z-index:10;
+    width:288px;
+    background:rgba(5,5,10,0.6);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:14px;padding:1.1rem 1.2rem;
+    animation:panelFadeIn .6s ease .3s both;
+  }
+  @keyframes panelFadeIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+  /* 头部：摘要（收件人 + 状态）+ 切换按钮，始终可见 */
+  .tracking-panel .tp-header{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+  .tracking-panel .tp-summary{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;min-width:0;flex:1}
+  .tracking-panel .tp-recipient{font-size:.92rem;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:9rem}
+  .tracking-panel .tp-status{
+    font-size:.66rem;padding:2px 10px;border-radius:100px;font-weight:600;letter-spacing:.05em;flex-shrink:0;
+  }
+  .tp-status.transporting{background:rgba(0,122,255,0.15);color:#22D3EE;border:1px solid rgba(34,211,238,0.25)}
+  .tp-status.delivering{background:rgba(255,149,0,0.15);color:#FF9500;border:1px solid rgba(255,149,0,0.25)}
+  .tp-status.signed{background:rgba(52,199,89,0.15);color:#34C759;border:1px solid rgba(52,199,89,0.25)}
+
+  /* 展开/收起切换按钮：半透明圆形，hover 变亮 */
+  .tp-toggle{
+    flex-shrink:0;width:28px;height:28px;border-radius:50%;
+    background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:var(--ink-mute);padding:0;
+    transition:background .25s ease,border-color .25s ease,color .25s ease,transform .15s ease;
+  }
+  .tp-toggle:hover{background:rgba(34,211,238,0.14);border-color:rgba(34,211,238,0.35);color:var(--cyan)}
+  .tp-toggle:active{transform:scale(.94)}
+  .tp-toggle svg{width:14px;height:14px;transition:transform .38s cubic-bezier(.4,0,.2,1)}
+  /* 收起时 chevron 旋转 180° 指向下（展开动作）；默认展开指向上（收起动作） */
+  .tracking-panel.collapsed .tp-toggle svg{transform:rotate(180deg)}
+
+  /* 可折叠内容区：max-height 平滑过渡 */
+  .tracking-panel .tp-body{
+    max-height:560px;overflow:hidden;opacity:1;
+    transition:max-height .42s cubic-bezier(.4,0,.2,1),opacity .3s ease;
+  }
+  .tracking-panel.collapsed .tp-body{max-height:0;opacity:0;pointer-events:none}
+  .tracking-panel .tp-body-inner{padding-top:.9rem}
+
+  .tracking-panel .tp-no{font-size:.68rem;color:var(--ink-faint);margin-bottom:.4rem;font-family:'Courier New',monospace;word-break:break-all}
+  .tracking-panel .tp-location{font-size:.76rem;color:var(--ink-mute);margin-bottom:1rem}
+  .tracking-panel .tp-location .loc-icon{color:var(--cyan);margin-right:.3rem}
+
+  /* 物流时间线 */
+  .tp-timeline{position:relative;padding-left:1.2rem;margin-bottom:.8rem}
+  .tp-timeline::before{
+    content:'';position:absolute;left:4px;top:6px;bottom:6px;
+    width:1px;background:rgba(255,255,255,0.12);
+  }
+  .tp-timeline .tl-item{position:relative;margin-bottom:.85rem}
+  .tp-timeline .tl-item:last-child{margin-bottom:0}
+  .tp-timeline .tl-item .tl-dot{
+    position:absolute;left:-1.2rem;top:2px;
+    width:9px;height:9px;border-radius:50%;
+    border:1.5px solid rgba(255,255,255,0.2);
+    background:transparent;
+  }
+  .tp-timeline .tl-item.done .tl-dot{
+    background:var(--green);border-color:var(--green);
+    box-shadow:0 0 6px rgba(52,199,89,0.4);
+  }
+  .tp-timeline .tl-item.current .tl-dot{
+    background:var(--cyan);border-color:var(--cyan);
+    box-shadow:0 0 8px rgba(34,211,238,0.6);
+    animation:dotPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes dotPulse{0%,100%{transform:scale(1);box-shadow:0 0 6px rgba(34,211,238,0.5)}50%{transform:scale(1.3);box-shadow:0 0 12px rgba(34,211,238,0.8)}}
+  .tp-timeline .tl-item .tl-stage{font-size:.78rem;color:rgba(255,255,255,0.85);font-weight:500}
+  .tp-timeline .tl-item.current .tl-stage{color:var(--cyan)}
+  .tp-timeline .tl-item .tl-date{font-size:.68rem;color:rgba(255,255,255,0.4);margin-top:1px;white-space:nowrap}
+
+  .tracking-panel .tp-eta{
+    padding-top:.8rem;border-top:1px solid rgba(255,255,255,0.08);
+    font-size:.76rem;color:var(--cyan);font-weight:500;
+  }
+
+  /* 折叠内容区在展开状态下可滚动 */
+  .tracking-panel .tp-body-inner::-webkit-scrollbar{width:2px}
+  .tracking-panel .tp-body-inner::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+
+  /* ===== 进度条 ===== */
+  .progress-wrap{position:absolute;left:50%;bottom:9.2rem;transform:translateX(-50%);
+    width:min(78vw,560px);z-index:10}
+  .progress-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.55rem}
+  .progress-head .label{font-size:.7rem;letter-spacing:.2em;color:var(--ink-faint);text-transform:uppercase}
+  .progress-head .pct{font-size:.82rem;color:var(--cyan);font-variant-numeric:tabular-nums;font-weight:500}
+  .progress-track{position:relative;height:3px;border-radius:99px;
+    background:rgba(255,255,255,.08);overflow:visible}
+  .progress-fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:99px;
+    background:linear-gradient(90deg,var(--cyan),var(--indigo),var(--purple));
+    box-shadow:0 0 10px rgba(34,211,238,.65);transition:width .12s linear}
+  .progress-fill::after{content:'';position:absolute;right:-3px;top:50%;transform:translateY(-50%);
+    width:9px;height:9px;border-radius:50%;background:#fff;
+    box-shadow:0 0 10px var(--cyan),0 0 18px rgba(34,211,238,.6);
+    animation:pulseDot 1.6s ease-in-out infinite}
+  @keyframes pulseDot{0%,100%{transform:translateY(-50%) scale(1);box-shadow:0 0 8px var(--cyan),0 0 16px rgba(34,211,238,.5)}50%{transform:translateY(-50%) scale(1.35);box-shadow:0 0 14px var(--cyan),0 0 24px rgba(34,211,238,.8)}}
+  /* ETA 颜色过渡 */
+  .tp-eta{transition:color .4s ease}
+  .tp-eta.delivered{color:var(--green)!important}
+  .tp-eta.delivering{color:var(--orange)!important}
+  /* 到达爆发动画 */
+  .tp-status.arrived-flash{animation:statusFlash .6s ease}
+  @keyframes statusFlash{0%{transform:scale(1)}30%{transform:scale(1.15)}100%{transform:scale(1)}}
+  .station-ticks{position:absolute;inset:0;display:flex;justify-content:space-between;
+    align-items:center;pointer-events:none}
+  .station-ticks i{width:1px;height:7px;background:rgba(255,255,255,.18)}
+
+  /* ===== 底部：状态文案 + 返回按钮 ===== */
+  .bottom-bar{position:absolute;left:0;right:0;bottom:0;z-index:10;
+    padding:1.4rem 1.6rem 1.7rem;display:flex;flex-direction:column;align-items:center;gap:1.1rem;
+    background:linear-gradient(to top,rgba(5,5,10,.92),rgba(5,5,10,.5) 60%,transparent)}
+  .travel-status{font-size:.92rem;letter-spacing:.08em;color:var(--ink);font-weight:300;text-align:center}
+  .travel-status .days{color:var(--cyan);font-weight:500}
+  .back-btn{display:inline-flex;align-items:center;gap:.5rem;cursor:pointer;
+    padding:.7rem 1.5rem;border-radius:99px;border:1px solid rgba(34,211,238,.28);
+    background:rgba(34,211,238,.06);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    color:var(--ink);font-size:.82rem;letter-spacing:.12em;font-family:var(--font);
+    transition:all .25s ease}
+  .back-btn:hover{background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.5);
+    box-shadow:0 0 18px rgba(34,211,238,.28);transform:translateY(-1px)}
+  .back-btn:active{transform:scale(.97)}
+  .back-btn svg{width:15px;height:15px}
+
+  /* 送达闪现提示 */
+  .delivered-toast{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%) scale(.9);
+    z-index:12;opacity:0;pointer-events:none;text-align:center;transition:opacity .4s ease,transform .4s ease}
+  .delivered-toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .delivered-toast .dt-icon{font-size:1.6rem;color:var(--cyan)}
+  .delivered-toast .dt-text{font-size:.8rem;letter-spacing:.18em;color:var(--ink-mute);margin-top:.3rem}
+
+  @media (max-width:768px){
+    .top-bar{padding:1rem 1rem}
+    .companion-line{font-size:.78rem}
+    .dest-tag{right:1rem;top:1rem}
+    .progress-wrap{bottom:8.2rem;width:88vw}
+    .travel-status{font-size:.82rem}
+    /* 追踪面板移到底部，可滚动 */
+    .tracking-panel{
+      right:.8rem;left:.8rem;top:auto;bottom:13.5rem;
+      width:auto;padding:.85rem 1rem;
+    }
+    .tracking-panel .tp-body{max-height:200px}
+    .tracking-panel .tp-body-inner{overflow-y:auto;max-height:200px;padding-right:.2rem}
+    .tracking-panel .tp-recipient{max-width:7rem}
+  }
+  @media (max-width:480px){
+    .tracking-panel{bottom:12.8rem;padding:.8rem .9rem}
+    .tracking-panel .tp-body{max-height:180px}
+    .tracking-panel .tp-body-inner{max-height:180px}
+    .progress-wrap{bottom:7.5rem}
+    .tracking-panel .tp-timeline .tl-item{margin-bottom:.6rem}
+  }
+</style>
+</head>
+<body>
+
+<div class="travel-page">
+  <!-- 主背景画布 -->
+  <canvas id="bgCanvas"></canvas>
+  <div class="grad-top"></div>
+  <div class="vignette"></div>
+
+  <!-- 顶部：时墨像素头像 + 语录 -->
+  <header class="top-bar">
+    <div class="avatar-wrap"><canvas id="avatarCanvas" width="52" height="52"></canvas></div>
+    <div class="companion-line">
+      <span class="name">时墨</span>
+      <span class="quote" id="companionQuote">你写了。它会在路上走几天。别急。</span>
+      <span class="typing-dots"><span></span><span></span><span></span></span>
+    </div>
+  </header>
+
+  <!-- 右上目标点 -->
+  <div class="dest-tag">
+    收信人
+    <span class="d-name" id="destName">远方 · 妈妈</span>
+  </div>
+
+  <!-- 追踪信息面板（可展开/收起） -->
+  <div class="tracking-panel" id="trackingPanel">
+    <div class="tp-header">
+      <div class="tp-summary">
+        <span class="tp-recipient" id="tpRecipient">寄给 妈妈</span>
+        <span class="tp-status transporting" id="tpStatus">运输中</span>
+      </div>
+      <button class="tp-toggle" id="tpToggle" type="button" aria-label="展开或收起追踪信息" aria-expanded="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 15l-6-6-6 6"/>
+        </svg>
+      </button>
+    </div>
+    <div class="tp-body">
+      <div class="tp-body-inner">
+        <div class="tp-no" id="tpNo">SF1234567890</div>
+        <div class="tp-location"><span class="loc-icon">◉</span>当前在 <span id="tpLocation">杭州转运中心</span></div>
+        <div class="tp-timeline" id="tpTimeline"></div>
+        <div class="tp-eta" id="tpEta">预计 06-27 送达</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进度条 -->
+  <div class="progress-wrap">
+    <div class="progress-head">
+      <span class="label">信件旅行进度</span>
+      <span class="pct"><span id="progressPct">0</span>%</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+      <div class="station-ticks"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
+  <!-- 送达提示 -->
+  <div class="delivered-toast" id="deliveredToast">
+    <div class="dt-icon">✦</div>
+    <div class="dt-text">信 件 已 送 达</div>
+  </div>
+
+  <!-- 底部 -->
+  <footer class="bottom-bar">
+    <div class="travel-status" id="travelStatus">你的信刚刚出发，还在路上走着…</div>
+    <button class="back-btn" id="backBtn" aria-label="返回">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+      返回
+    </button>
+  </footer>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   一、读取 URL 参数，获取快递单号
+   ============================================================ */
+const urlParams = new URLSearchParams(window.location.search);
+const trackNo = urlParams.get('track') || '';
+
+/* ============================================================
+   二、追踪数据库
+   ============================================================ */
+const TRACKING_DB = {
+  'SF1234567890': {
+    recipient: '妈妈',
+    trackingNo: 'SF1234567890',
+    status: '运输中',
+    statusType: 'transporting',
+    location: '杭州转运中心',
+    progress: 0.40,
+    eta: '预计 06-27 送达',
+    daysLeft: 1,
+    quote: '你的信在路上了。正在经过杭州转运中心。',
+    timeline: [
+      { stage: '已寄出', date: '06-24 14:30', state: 'done' },
+      { stage: '运输中', date: '06-25 09:15', state: 'current' },
+      { stage: '派送中', date: '待定', state: 'pending' },
+      { stage: '已签收', date: '待定', state: 'pending' },
+    ],
+  },
+  'YT9876543210': {
+    recipient: '老友',
+    trackingNo: 'YT9876543210',
+    status: '派送中',
+    statusType: 'delivering',
+    location: '上海浦东',
+    progress: 0.80,
+    eta: '今日送达',
+    daysLeft: 0,
+    quote: '信件已在目的地附近。今天就能到。',
+    timeline: [
+      { stage: '已寄出', date: '06-22 10:00', state: 'done' },
+      { stage: '运输中', date: '06-23 08:30', state: 'done' },
+      { stage: '派送中', date: '06-26 14:20', state: 'current' },
+      { stage: '已签收', date: '待定', state: 'pending' },
+    ],
+  },
+};
+
+// 默认数据（无参数时从头播放完整动画）
+const DEFAULT_TRACKING = {
+  recipient: '妈妈',
+  trackingNo: '',
+  status: '旅行中',
+  statusType: 'transporting',
+  location: '路途中',
+  progress: 0,
+  eta: '预计 3 天后送达',
+  daysLeft: 3,
+  quote: '你写了。它会在路上走几天。别急。',
+  timeline: [
+    { stage: '已寄出', date: '刚刚', state: 'done' },
+    { stage: '运输中', date: '路途中', state: 'current' },
+    { stage: '派送中', date: '待定', state: 'pending' },
+    { stage: '已签收', date: '待定', state: 'pending' },
+  ],
+};
+
+const tracking = TRACKING_DB[trackNo] || DEFAULT_TRACKING;
+
+/* ============================================================
+   三、填充追踪信息到 DOM
+   ============================================================ */
+function fillTrackingInfo() {
+  document.getElementById('companionQuote').textContent = tracking.quote;
+  document.getElementById('destName').textContent = '远方 · ' + tracking.recipient;
+  document.getElementById('tpRecipient').textContent = '寄给 ' + tracking.recipient;
+
+  const statusEl = document.getElementById('tpStatus');
+  statusEl.textContent = tracking.status;
+  statusEl.className = 'tp-status ' + tracking.statusType;
+
+  document.getElementById('tpNo').textContent = tracking.trackingNo || '— — —';
+  document.getElementById('tpLocation').textContent = tracking.location;
+  document.getElementById('tpEta').textContent = tracking.eta;
+
+  // 渲染时间线
+  const timelineEl = document.getElementById('tpTimeline');
+  timelineEl.innerHTML = tracking.timeline.map(t => `
+    <div class="tl-item ${t.state}">
+      <span class="tl-dot"></span>
+      <span class="tl-stage">${t.stage}</span>
+      <span class="tl-date">${t.date}</span>
+    </div>`).join('');
+}
+
+fillTrackingInfo();
+
+/* ============================================================
+   四、12x12 像素头像（内联自包含）
+   ============================================================ */
+(function avatar(){
+  const C = { _:0, HAIR:1, SKIN:2, EYE:3, MOUTH:4, COLLAR:5 };
+  const PALETTE = {1:'#1A1A2E',2:'#E8D5C4',3:'#1D1D1F',4:'#C97B63',5:'#2C2C2E'};
+  const BASE = [
+    [0,0,1,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,1,1,1,0],
+    [1,1,2,2,2,2,2,2,2,2,1,1],
+    [1,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,3,3,2,2,2,2,3,3,2,1],
+    [1,2,3,3,2,2,2,2,3,3,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,2,2,2,4,4,2,2,2,2,1],
+    [0,1,2,2,2,2,2,2,2,2,1,0],
+    [0,0,1,5,5,5,5,5,5,1,0,0],
+    [0,0,0,5,5,5,5,5,5,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0],
+  ];
+  const EYE_COORDS = [[4,2],[4,3],[5,2],[5,3],[4,8],[4,9],[5,8],[5,9]];
+  function makeLook(base,dx,dy){
+    if(dx===0&&dy===0) return base;
+    const p = base.map(r=>[...r]);
+    for(const [y,x] of EYE_COORDS){ if(p[y]&&p[y][x]===C.EYE) p[y][x]=C.SKIN; }
+    for(const [y,x] of EYE_COORDS){
+      const ny=y+dy,nx=x+dx;
+      if(p[ny]&&p[ny][nx]!==undefined&&p[ny][nx]!==0) p[ny][nx]=C.EYE;
+    }
+    return p;
+  }
+  const look={};
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++) look[dx+','+dy]=makeLook(BASE,dx,dy);
+  const SMILE = BASE.map(r=>[...r]); SMILE[7][4]=C.MOUTH; SMILE[7][7]=C.MOUTH;
+
+  const cv=document.getElementById('avatarCanvas');
+  const ctx=cv.getContext('2d');
+  const PIX=4, SIZE=12*PIX; cv.width=SIZE; cv.height=SIZE;
+  ctx.imageSmoothingEnabled=false;
+
+  let frame=0, blinkStart=-1, smileStart=-1;
+  let nextBlink=120+Math.random()*180, nextSmile=300+Math.random()*300;
+  let lookDx=0,lookDy=0,targetDx=0,targetDy=0,mx=innerWidth/2,my=innerHeight/2;
+  addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;});
+  function updateLook(){
+    const r=cv.getBoundingClientRect();
+    const cx=r.left+r.width/2, cy=r.top+r.height/2;
+    const dx=mx-cx, dy=my-cy, dist=Math.hypot(dx,dy);
+    if(dist<26){targetDx=0;targetDy=0;return;}
+    const a=Math.atan2(dy,dx);
+    targetDx=Math.round(Math.cos(a)); targetDy=Math.round(Math.sin(a));
+  }
+  function draw(pattern){
+    ctx.clearRect(0,0,SIZE,SIZE);
+    for(let y=0;y<12;y++)for(let x=0;x<12;x++){
+      const c=pattern[y][x]; if(!c) continue;
+      ctx.fillStyle=PALETTE[c]||'#000';
+      ctx.fillRect(x*PIX,y*PIX,PIX,PIX);
+    }
+  }
+  function loop(){
+    updateLook();
+    lookDx+=(targetDx-lookDx)*0.15; lookDy+=(targetDy-lookDy)*0.15;
+    let base = look[Math.round(lookDx)+','+Math.round(lookDy)] || BASE;
+    base = base.map(r=>[...r]);
+    if(blinkStart>=0 && frame-blinkStart<6){
+      base = base.map((row,i)=>(i===4||i===5)?row.map(c=>c===C.EYE?C.SKIN:c):row);
+    }else if(blinkStart>=0){ blinkStart=-1; nextBlink=frame+120+Math.random()*180; }
+    else if(frame>=nextBlink){ blinkStart=frame; }
+    if(smileStart>=0 && frame-smileStart<60){
+      if(base[7]){ base[7][4]=C.MOUTH; base[7][7]=C.MOUTH; }
+    }else if(smileStart>=0){ smileStart=-1; nextSmile=frame+300+Math.random()*300; }
+    else if(frame>=nextSmile){ smileStart=frame; }
+    draw(base);
+    frame++;
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+
+/* ============================================================
+   五、主画布：星空 / 贝塞尔路径 / 阶段节点 / 信封
+   ============================================================ */
+const canvas=document.getElementById('bgCanvas');
+const ctx=canvas.getContext('2d');
+let W=0,H=0,DPR=1;
+
+function resize(){
+  DPR=window.devicePixelRatio||1;
+  W=canvas.clientWidth; H=canvas.clientHeight;
+  canvas.width=Math.round(W*DPR); canvas.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+addEventListener('resize',resize); resize();
+
+/* --- 星空粒子 --- */
+const STARS=[];
+for(let i=0;i<200;i++){
+  STARS.push({
+    x:Math.random(), y:Math.random(),
+    r:Math.random()*1.3+0.3,
+    phase:Math.random()*Math.PI*2,
+    speed:0.4+Math.random()*1.4,
+    base:0.25+Math.random()*0.7,
+    hue:Math.random()<0.18?'#22D3EE':(Math.random()<0.5?'#818CF8':'#FFFFFF')
+  });
+}
+const BIG=[];
+for(let i=0;i<8;i++){ BIG.push({x:Math.random(),y:Math.random(),r:1.6+Math.random()*1.2,phase:Math.random()*6.28,speed:.6+Math.random()}); }
+let shooting=null;
+function maybeShoot(){
+  if(shooting) return;
+  if(Math.random()<0.0035){
+    shooting={x:Math.random()*W*0.6, y:Math.random()*H*0.4, len:80+Math.random()*80, sp:7+Math.random()*5, life:1};
+  }
+}
+
+/* --- 贝塞尔飞行路径 --- */
+const P0={x:0.08,y:0.86}, P1={x:0.30,y:0.10}, P2={x:0.66,y:0.08}, P3={x:0.93,y:0.20};
+function bez(t,a,b,c,d){const mt=1-t;return mt*mt*mt*a+3*mt*mt*t*b+3*mt*t*t*c+t*t*t*d;}
+function pointAt(t){return {x:bez(t,P0.x,P1.x,P2.x,P3.x)*W, y:bez(t,P0.y,P1.y,P2.y,P3.y)*H};}
+function tangentAt(t){
+  const mt=1-t;
+  const dx=3*mt*mt*(P1.x-P0.x)+6*mt*t*(P2.x-P1.x)+3*t*t*(P3.x-P2.x);
+  const dy=3*mt*mt*(P1.y-P0.y)+6*mt*t*(P2.y-P1.y)+3*t*t*(P3.y-P2.y);
+  return Math.atan2(dy*H,dx*W);
+}
+
+/* --- 四个阶段节点（0% / 33% / 66% / 100%） --- */
+const STAGE_NODES=[
+  {t:0,    name:'已寄出'},
+  {t:0.33, name:'运输中'},
+  {t:0.66, name:'派送中'},
+  {t:1.0,  name:'已签收'},
+];
+const STATION_FONT='300 10px '+(getComputedStyle(document.body).fontFamily||'sans-serif');
+
+const trail=[];
+const progressFill=document.getElementById('progressFill');
+const progressPct=document.getElementById('progressPct');
+const toast=document.getElementById('deliveredToast');
+const travelStatus=document.getElementById('travelStatus');
+const tpEtaEl=document.getElementById('tpEta');
+const tpLocationEl=document.getElementById('tpLocation');
+const tpStatusEl=document.getElementById('tpStatus');
+
+/* --- 节点到达爆发系统 --- */
+const bursts=[];
+function createBurst(x,y,color){
+  // 环形扩散 + 粒子飞溅
+  bursts.push({x,y,r:0,alpha:0.9,color:color||'#22D3EE',type:'ring'});
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2;
+    bursts.push({x,y,vx:Math.cos(a)*2.5,vy:Math.sin(a)*2.5,r:2,alpha:0.8,color:color||'#22D3EE',type:'particle',life:1});
+  }
+}
+function drawBursts(){
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(let i=bursts.length-1;i>=0;i--){
+    const b=bursts[i];
+    if(b.type==='ring'){
+      b.r+=3.5; b.alpha*=0.93;
+      if(b.alpha<0.02){bursts.splice(i,1);continue;}
+      ctx.globalAlpha=b.alpha;
+      ctx.strokeStyle=b.color; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.stroke();
+    }else{
+      b.x+=b.vx; b.y+=b.vy; b.vx*=0.95; b.vy*=0.95; b.life-=0.025;
+      if(b.life<=0){bursts.splice(i,1);continue;}
+      ctx.globalAlpha=b.life*0.7;
+      ctx.fillStyle=b.color;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r*b.life,0,Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+/* --- 动态 ETA / 位置 / 状态联动 --- */
+let lastStageIdx=-1; // 记录上一个到达的阶段索引，用于触发爆发
+function updateTrackingInfo(t){
+  // ETA 随进度动态变化
+  if(t>=1){
+    tpEtaEl.textContent='已送达 ✓';
+    tpEtaEl.className='tp-eta delivered';
+    tpLocationEl.textContent='已签收';
+  }else if(t>=0.66){
+    tpEtaEl.textContent='预计今日送达';
+    tpEtaEl.className='tp-eta delivering';
+    tpLocationEl.textContent='目的地附近';
+  }else if(t>=0.33){
+    tpEtaEl.textContent='预计 2 天后送达';
+    tpEtaEl.className='tp-eta';
+    tpLocationEl.textContent='运输途中';
+  }else{
+    tpEtaEl.textContent='预计 3 天后送达';
+    tpEtaEl.className='tp-eta';
+    tpLocationEl.textContent='刚刚寄出';
+  }
+
+  // 检测是否到达新阶段节点 → 触发爆发
+  const EPS=0.005;
+  for(let i=0;i<STAGE_NODES.length;i++){
+    const node=STAGE_NODES[i];
+    if(Math.abs(t-node.t)<EPS && i>lastStageIdx){
+      lastStageIdx=i;
+      const p=pointAt(node.t);
+      createBurst(p.x,p.y, i===STAGE_NODES.length-1?'#34C759':'#22D3EE');
+      // 状态标签闪烁
+      tpStatusEl.classList.remove('arrived-flash');
+      void tpStatusEl.offsetWidth; // 触发重排
+      tpStatusEl.classList.add('arrived-flash');
+      // 更新状态标签文字
+      if(i===1){tpStatusEl.textContent='运输中';tpStatusEl.className='tp-status transporting arrived-flash';}
+      else if(i===2){tpStatusEl.textContent='派送中';tpStatusEl.className='tp-status delivering arrived-flash';}
+      else if(i===3){tpStatusEl.textContent='已签收';tpStatusEl.className='tp-status signed arrived-flash';}
+    }
+  }
+}
+
+/* ============================================================
+   六、动画状态机：信封按快递进度逐阶段推进
+   - 信封从 tracking.progress 出发，缓慢移动到下一个阶段节点
+   - 到达后在节点处轻微浮动（上下浮动），表示"在途中等待"
+   - 等待一段时间后继续推进到下一个阶段（模拟下一次状态更新）
+   - 进度条 / 百分比 / 状态文案 与信封位置实时联动
+   ============================================================ */
+const startProgress = tracking.progress;
+const MOVE_DURATION = 9000;  // 每个阶段移动时长（约 8-10s，符合慢节奏）
+const BOB_DURATION   = 6500;  // 在阶段节点停留（浮动）时长
+
+// 取下一个阶段节点（严格大于当前 t）
+function nextStage(t){
+  for(let i=0;i<STAGE_NODES.length;i++){
+    if(STAGE_NODES[i].t > t + 0.001) return {t:STAGE_NODES[i].t, idx:i};
+  }
+  return {t:1, idx:STAGE_NODES.length-1};
+}
+
+let envT = startProgress;             // 信封在路径上的当前位置（= 快递实际进度）
+let moveStartT = startProgress;       // 本次移动起点
+let moveTarget = nextStage(startProgress); // 本次移动目标节点
+let moveStartTime = performance.now();
+let animState = 'moving';             // 'moving' | 'bobbing' | 'delivered'
+let bobStartTime = 0;
+let arrived = false;
+
+// 已签收：信封直接在终点静止浮动
+if(startProgress >= 1){
+  animState = 'delivered';
+  arrived = true;
+  envT = 1;
+  bobStartTime = performance.now();
+  toast.classList.add('show');
+}
+
+function easeInOut(x){
+  return x < 0.5 ? 2*x*x : 1 - Math.pow(-2*x+2, 2)/2;
+}
+
+// 底部状态文案随进度联动
+function getStatusText(t){
+  if(t >= 1)      return '信已送达。<span class="days">她应该很快会看到。</span>';
+  if(t >= 0.66)   return '快到了，再等等';
+  if(t >= 0.33)   return '信件正在途中，别急，慢慢来';
+  return '你的信刚刚出发，还在路上走着…';
+}
+
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
+}
+
+function drawEnvelope(x,y,ang,scale){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(ang); ctx.scale(scale,scale);
+  ctx.shadowColor='rgba(34,211,238,0.9)'; ctx.shadowBlur=22;
+  const w=30,h=21;
+  const g=ctx.createLinearGradient(-w/2,-h/2,w/2,h/2);
+  g.addColorStop(0,'#818CF8'); g.addColorStop(1,'#A78BFA');
+  ctx.fillStyle=g; roundRect(ctx,-w/2,-h/2,w,h,4); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(34,211,238,0.92)';
+  ctx.beginPath();
+  ctx.moveTo(-w/2,-h/2); ctx.lineTo(0,1.5); ctx.lineTo(w/2,-h/2);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(5,5,10,0.35)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(-w/2,-h/2); ctx.lineTo(0,1.5); ctx.lineTo(w/2,-h/2);
+  ctx.stroke();
+  ctx.shadowColor='rgba(34,211,238,0.8)'; ctx.shadowBlur=10;
+  ctx.fillStyle='#22D3EE';
+  ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/* --- 阶段节点绘制 ---
+   passed  ：已经过 —— 青色实心圆 + 光晕
+   current ：当前所在阶段 —— 青色脉冲动画
+   pending ：未到达 —— 暗紫色空心圆 */
+function drawStageNode(node, idx, curT, time){
+  const p = pointAt(node.t);
+  const EPS = 0.004;
+  // 当前目标节点：>= 信封位置 的第一个节点
+  let targetIdx = STAGE_NODES.findIndex(n => n.t >= curT - EPS);
+  if(targetIdx === -1) targetIdx = STAGE_NODES.length - 1;
+
+  let state;
+  if(idx < targetIdx)      state = 'passed';
+  else if(idx === targetIdx) state = 'current';
+  else                       state = 'pending';
+
+  const pulse = 0.5 + 0.5 * Math.sin(time * 0.003 + idx * 1.3);
+
+  ctx.save();
+  if(state === 'passed'){
+    // 已经过：青色实心圆 + 光晕
+    ctx.shadowColor='#22D3EE'; ctx.shadowBlur=10;
+    ctx.fillStyle='#22D3EE';
+    ctx.beginPath(); ctx.arc(p.x,p.y,3.6,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.globalAlpha = 0.3 + 0.15 * pulse;
+    ctx.strokeStyle = 'rgba(34,211,238,0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(p.x,p.y,8 + pulse*2, 0, Math.PI*2); ctx.stroke();
+  } else if(state === 'current'){
+    // 当前阶段：青色脉冲
+    ctx.shadowColor='#22D3EE'; ctx.shadowBlur=14 + pulse*8;
+    ctx.fillStyle='#22D3EE';
+    ctx.beginPath(); ctx.arc(p.x,p.y,4.2 + pulse*1.2, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+    for(let i=0;i<2;i++){
+      ctx.globalAlpha = (0.5 - i*0.2) * (0.5 + 0.5*pulse);
+      ctx.strokeStyle = '#22D3EE';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(p.x,p.y,9 + i*6 + pulse*4, 0, Math.PI*2); ctx.stroke();
+    }
+  } else {
+    // 未到达：暗紫色空心圆
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = 'rgba(167,139,250,0.65)';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(p.x,p.y,4.2, 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = 'rgba(167,139,250,0.35)';
+    ctx.beginPath(); ctx.arc(p.x,p.y,2.2, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+
+  // 节点旁的阶段名称
+  ctx.save();
+  ctx.font = STATION_FONT;
+  ctx.textAlign = 'center';
+  if(state === 'passed'){
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = 'rgba(34,211,238,0.9)';
+  } else if(state === 'current'){
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#22D3EE';
+  } else {
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = 'rgba(167,139,250,0.75)';
+  }
+  ctx.fillText(node.name, p.x, p.y - 14);
+  ctx.restore();
+}
+
+function drawPath(curT, animTime){
+  ctx.save();
+  ctx.setLineDash([3,7]); ctx.lineWidth=1; ctx.lineCap='round';
+  ctx.strokeStyle='rgba(129,140,248,0.22)';
+  ctx.beginPath();
+  for(let i=0;i<=60;i++){
+    const t=i/60, p=pointAt(t);
+    i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  if(curT>0.001){
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.shadowColor='rgba(34,211,238,0.7)'; ctx.shadowBlur=10;
+    const grad=ctx.createLinearGradient(pointAt(0).x,pointAt(0).y,pointAt(curT).x,pointAt(curT).y);
+    grad.addColorStop(0,'rgba(129,140,248,0.15)');
+    grad.addColorStop(0.5,'rgba(167,139,250,0.7)');
+    grad.addColorStop(1,'rgba(34,211,238,0.95)');
+    ctx.strokeStyle=grad; ctx.lineWidth=2.2;
+    ctx.beginPath();
+    const steps=Math.max(2,Math.ceil(curT*80));
+    for(let i=0;i<=steps;i++){
+      const t=(i/steps)*curT, p=pointAt(t);
+      i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // 流光效果：沿路径移动的高亮点
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const flowSpeed=0.0003;
+    for(let k=0;k<3;k++){
+      const flowT=((animTime*flowSpeed+k/3)%1)*curT;
+      if(flowT>0.01){
+        const fp=pointAt(flowT);
+        ctx.globalAlpha=0.6;
+        const fg=ctx.createRadialGradient(fp.x,fp.y,0,fp.x,fp.y,12);
+        fg.addColorStop(0,'rgba(255,255,255,0.8)');
+        fg.addColorStop(0.4,'rgba(34,211,238,0.4)');
+        fg.addColorStop(1,'rgba(34,211,238,0)');
+        ctx.fillStyle=fg;
+        ctx.fillRect(fp.x-12,fp.y-12,24,24);
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function drawStars(time){
+  ctx.save();
+  let ng=ctx.createRadialGradient(W*0.25,H*0.3,0,W*0.25,H*0.3,W*0.5);
+  ng.addColorStop(0,'rgba(129,140,248,0.10)'); ng.addColorStop(1,'rgba(5,5,10,0)');
+  ctx.fillStyle=ng; ctx.fillRect(0,0,W,H);
+  ng=ctx.createRadialGradient(W*0.8,H*0.7,0,W*0.8,H*0.7,W*0.5);
+  ng.addColorStop(0,'rgba(34,211,238,0.08)'); ng.addColorStop(1,'rgba(5,5,10,0)');
+  ctx.fillStyle=ng; ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  for(let i=0;i<STARS.length;i++){
+    const s=STARS[i];
+    const a=s.base*(0.45+0.55*Math.sin(time*0.001*s.speed+s.phase));
+    ctx.globalAlpha=Math.max(0,a);
+    ctx.fillStyle=s.hue;
+    ctx.beginPath(); ctx.arc(s.x*W,s.y*H,s.r,0,Math.PI*2); ctx.fill();
+  }
+  for(let i=0;i<BIG.length;i++){
+    const s=BIG[i];
+    const a=0.5+0.5*Math.sin(time*0.001*s.speed+s.phase);
+    const x=s.x*W,y=s.y*H;
+    ctx.globalAlpha=Math.max(0.15,a);
+    ctx.fillStyle='#FFFFFF';
+    ctx.beginPath(); ctx.arc(x,y,s.r,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=a*0.5;
+    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(x-s.r*3,y); ctx.lineTo(x+s.r*3,y);
+    ctx.moveTo(x,y-s.r*3); ctx.lineTo(x,y+s.r*3); ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  maybeShoot();
+  if(shooting){
+    ctx.save();
+    const g=ctx.createLinearGradient(shooting.x,shooting.y,shooting.x-shooting.len,shooting.y+shooting.len*0.4);
+    g.addColorStop(0,'rgba(255,255,255,'+shooting.life+')');
+    g.addColorStop(1,'rgba(34,211,238,0)');
+    ctx.strokeStyle=g; ctx.lineWidth=1.6; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(shooting.x,shooting.y); ctx.lineTo(shooting.x-shooting.len,shooting.y+shooting.len*0.4); ctx.stroke();
+    ctx.restore();
+    shooting.x+=shooting.sp; shooting.y+=shooting.sp*0.4; shooting.life-=0.02;
+    if(shooting.life<=0||shooting.x>W+100) shooting=null;
+  }
+}
+
+/* --- 主循环 --- */
+let lastT = performance.now();
+function frame(now){
+  const dt = now - lastT; lastT = now;
+
+  // 1) 更新信封在路径上的位置（= 快递实际进度）
+  if(animState === 'moving'){
+    const p = Math.min(1, (now - moveStartTime) / MOVE_DURATION);
+    envT = moveStartT + (moveTarget.t - moveStartT) * easeInOut(p);
+    if(p >= 1){
+      envT = moveTarget.t;
+      if(envT >= 1 - 0.001){
+        // 到达终点 —— 送达
+        animState = 'delivered';
+        arrived = true;
+        bobStartTime = now;
+        toast.classList.add('show');
+      } else {
+        // 到达中间阶段节点 —— 浮动等待下一次状态更新
+        animState = 'bobbing';
+        bobStartTime = now;
+      }
+    }
+  } else if(animState === 'bobbing'){
+    envT = moveTarget.t; // 停留在该节点
+    if(now - bobStartTime >= BOB_DURATION){
+      // 推进到下一个阶段节点（模拟下一次状态更新）
+      moveStartT = envT;
+      moveTarget = nextStage(envT);
+      moveStartTime = now;
+      animState = 'moving';
+    }
+  }
+  // delivered: envT 保持 1，在终点轻微浮动
+
+  const t = envT;
+
+  // 2) 在节点停留时的上下浮动 + 水平微漂
+  let bobY = 0, bobX = 0;
+  if(animState === 'bobbing'){
+    const bt = now - bobStartTime;
+    bobY = Math.sin(bt * 0.0032) * 5;
+    bobX = Math.cos(bt * 0.0021) * 2;
+  } else if(animState === 'delivered'){
+    const bt = now - bobStartTime;
+    bobY = Math.sin(bt * 0.0028) * 3;
+    bobX = Math.cos(bt * 0.0019) * 1.5;
+  }
+
+  // 3) 绘制
+  ctx.clearRect(0,0,W,H);
+  drawStars(now);
+  drawPath(t, now);
+  for(let i=0;i<STAGE_NODES.length;i++){
+    drawStageNode(STAGE_NODES[i], i, t, now);
+  }
+
+  // 节点到达爆发
+  drawBursts();
+
+  // 信封位置
+  const pos = pointAt(t);
+  const ang = tangentAt(t);
+  const envX = pos.x + bobX;
+  const envY = pos.y + bobY;
+  if(animState === 'moving'){
+    trail.push({x:envX, y:envY, life:1});
+    if(trail.length>30) trail.shift();
+  }
+  // 增强轨迹：彗星尾渐变 + 多层发光
+  for(let i=0;i<trail.length;i++){
+    const p=trail[i]; p.life-=0.03;
+    if(p.life>0){
+      const ratio=i/trail.length;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      // 外层光晕
+      ctx.globalAlpha=p.life*ratio*0.3;
+      const grad=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,6+p.life*4);
+      grad.addColorStop(0,'rgba(34,211,238,'+p.life*ratio*0.5+')');
+      grad.addColorStop(1,'rgba(34,211,238,0)');
+      ctx.fillStyle=grad;
+      ctx.fillRect(p.x-10,p.y-10,20,20);
+      // 内层亮点
+      ctx.globalAlpha=p.life*0.7;
+      ctx.fillStyle=ratio>0.7?'#FFFFFF':'#22D3EE';
+      ctx.beginPath(); ctx.arc(p.x,p.y,1.2*p.life+0.3,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
+  // 信封光晕脉冲（移动时更强）
+  const envGlow = animState==='moving' ? 0.8+Math.sin(now*0.005)*0.2 : 0.4+Math.sin(now*0.003)*0.15;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=envGlow*0.4;
+  const envGrad=ctx.createRadialGradient(envX,envY,0,envX,envY,40);
+  envGrad.addColorStop(0,'rgba(34,211,238,0.4)');
+  envGrad.addColorStop(0.5,'rgba(129,140,248,0.15)');
+  envGrad.addColorStop(1,'rgba(129,140,248,0)');
+  ctx.fillStyle=envGrad;
+  ctx.fillRect(envX-40,envY-40,80,80);
+  ctx.restore();
+  drawEnvelope(envX, envY, ang, 1);
+  ctx.globalAlpha=1;
+
+  // 4) 进度条 / 百分比 / 状态文案 / ETA 与信封位置实时联动
+  const pct = Math.round(t * 100);
+  progressFill.style.width = pct + '%';
+  progressPct.textContent = pct;
+  travelStatus.innerHTML = getStatusText(t);
+  updateTrackingInfo(t);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ============================================================
+   七、追踪面板展开/收起
+   ============================================================ */
+const trackingPanel = document.getElementById('trackingPanel');
+const tpToggle = document.getElementById('tpToggle');
+tpToggle.addEventListener('click', function(){
+  const collapsed = trackingPanel.classList.toggle('collapsed');
+  tpToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+});
+
+/* ============================================================
+   八、返回按钮
+   ============================================================ */
+document.getElementById('backBtn').addEventListener('click',function(){
+  // 如果是从寄信进度来的，返回 chat.html
+  window.location.href='chat.html';
+});
+
+})();
+</script>
+</body>
+</html>
